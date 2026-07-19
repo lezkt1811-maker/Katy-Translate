@@ -24,7 +24,7 @@ function $(id) { return document.getElementById(id); }
 function fillLangSelect(sel, includeAuto) {
   sel.innerHTML = "";
   if (includeAuto) {
-    const o = document.createElement("option"); o.value = "auto"; o.textContent = "Detect source"; sel.appendChild(o);
+    const o = document.createElement("option"); o.value = "auto"; o.textContent = "Detect language"; sel.appendChild(o);
   }
   LANGS.forEach(l => {
     const o = document.createElement("option"); o.value = l.code; o.textContent = l.label; sel.appendChild(o);
@@ -213,13 +213,37 @@ async function askClaude(prompt) {
   return (data.content || []).map(b => b.text || "").join("\n").trim();
 }
 
+async function detectLanguage(text) {
+  const codeList = LANGS.map(l => l.code + "=" + l.label).join(", ");
+  const prompt = 'Identify the language of the following text. Choose the single best-matching code from this exact list (format code=name): ' + codeList + '. Respond with ONLY the two/four-letter code itself, nothing else, no punctuation.\n\nText: "' + text + '"';
+  const out = await askClaude(prompt);
+  const code = (out || "").trim().toLowerCase().replace(/[^a-z-]/g, "");
+  const match = LANGS.find(l => l.code.toLowerCase() === code);
+  return match ? match.code : null;
+}
+
 $("translateBtn").addEventListener("click", async () => {
   const t = selectedText(); if (!t) return;
   $("translateBtn").disabled = true; $("translateBtn").textContent = "Translating…";
   try {
-    const src = $("sourceLang").value === "auto" ? "en" : $("sourceLang").value;
+    let src = $("sourceLang").value;
+    let detectedNote = "";
+    if (src === "auto") {
+      $("translateBtn").textContent = "Detecting language…";
+      const detected = await detectLanguage(t);
+      if (detected) {
+        src = detected;
+        detectedNote = "Detected language: " + langLabel(detected);
+      } else {
+        src = "en";
+        detectedNote = "Couldn't confidently detect the language — assumed English.";
+      }
+      $("translateBtn").textContent = "Translating…";
+    }
     const out = await myMemoryTranslate(t, src, $("targetLang").value);
-    $("translationResult").innerHTML = '<div class="result-box">' + escapeHtml(out) + '</div>';
+    $("translationResult").innerHTML =
+      (detectedNote ? '<div style="font-size:12px;color:#9c9382;margin-bottom:6px;">' + escapeHtml(detectedNote) + '</div>' : '') +
+      '<div class="result-box">' + escapeHtml(out) + '</div>';
   } catch { $("translationResult").innerHTML = '<div class="result-box">Translation request failed.</div>'; }
   $("translateBtn").disabled = false; $("translateBtn").textContent = "Translate";
 });
@@ -242,12 +266,20 @@ $("reverseBtn").addEventListener("click", async () => {
   $("reverseBtn").disabled = true; $("reverseBtn").textContent = "Checking…";
   $("reverseResult").innerHTML = "";
   try {
-    const src = $("sourceLang").value === "auto" ? "en" : $("sourceLang").value;
+    let src = $("sourceLang").value;
+    let detectedNote = "";
+    if (src === "auto") {
+      const detected = await detectLanguage(t);
+      src = detected || "en";
+      detectedNote = detected ? ("Detected language: " + langLabel(detected)) : "Couldn't confidently detect the language — assumed English.";
+    }
     const toEnglish = await myMemoryTranslate(t, src, "en");
     const back = await myMemoryTranslate(toEnglish, "en", src);
     const origWords = new Set(t.toLowerCase().split(/\s+/));
     const backWords = back.toLowerCase().split(/\s+/);
-    let html = '<div class="explain-box"><div style="color:#9c9382;margin-bottom:6px;">Round-trip: source → English → back</div>';
+    let html = '<div class="explain-box">';
+    if (detectedNote) html += '<div style="color:#9c9382;margin-bottom:6px;">' + escapeHtml(detectedNote) + '</div>';
+    html += '<div style="color:#9c9382;margin-bottom:6px;">Round-trip: source → English → back</div>';
     html += '<div style="margin-bottom:6px;">English: ' + escapeHtml(toEnglish) + '</div><div>Back: ';
     backWords.forEach(w => {
       const diff = !origWords.has(w);
