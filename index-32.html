@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Palimpsest</title>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@400;600&family=Source+Sans+Pro:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Palimpsest</h1>
+  <div class="tagline">A visual translator that shows its uncertainty instead of hiding it.</div>
+
+  <div id="dropzone" class="dropzone">
+    <div style="font-size:15px;">📷 Upload or capture a photo of text</div>
+    <div class="hint">Signage, a page, an inscription — anything with writing on it.</div>
+  </div>
+  <input id="fileInput" type="file" accept="image/*" style="display:none" />
+
+  <div id="app" style="display:none;">
+    <div class="toolbar">
+      <button class="btn" id="newImageBtn">New image</button>
+      <button class="btn" data-mode="standard">Standard</button>
+      <button class="btn" data-mode="broad">Broad Scan</button>
+      <button class="btn" data-mode="ancient">Ancient Mode</button>
+      <button class="btn" data-mode="manual">Manual Select</button>
+      <button class="btn" id="heatmapBtn">Heat map off</button>
+      <button class="btn primary" id="scanBtn">Scan image</button>
+    </div>
+    <div class="status" id="status"></div>
+
+    <div class="stage" id="stage">
+      <img id="mainImage" alt="scan target" />
+    </div>
+
+    <div id="ancientNote" class="ancientNote" style="display:none;">
+      Ancient Mode preserves every detected shape without filtering by confidence. Use "Analyze symbols" below to segment, count, and export glyphs for manual study rather than trusting an auto-translation.
+    </div>
+
+    <section class="panel">
+      <h2>Selection</h2>
+      <div class="selectionText" id="selectionText"><span class="empty">Tap boxes on the image to build a selection.</span></div>
+      <div class="rowline">
+        <select id="sourceLang"></select>
+        <span>→</span>
+        <select id="targetLang"></select>
+        <button class="btn primary" id="translateBtn">Translate</button>
+        <button class="btn" id="explainBtn">✨ Explain</button>
+        <button class="btn" id="reverseBtn">↺ Reverse check</button>
+        <button class="btn" id="saveNoteBtn">💾 Save to workspace</button>
+      </div>
+      <div id="translationResult"></div>
+      <div id="explanationResult"></div>
+      <div id="reverseResult"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Translation Chain</h2>
+      <div id="chainChips"></div>
+      <div class="rowline">
+        <select id="chainAddSelect"></select>
+        <button class="btn" id="chainAddBtn">+ Add language</button>
+        <button class="btn primary" id="chainRunBtn">Run chain</button>
+      </div>
+      <div id="chainResults" style="margin-top:12px;"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Ancient Text Workspace</h2>
+      <button class="btn" id="analyzeSymbolsBtn">Analyze symbols</button>
+      <div id="symbolResult"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Research Workspace</h2>
+      <div id="notesList"><div class="empty">Saved selections will appear here.</div></div>
+      <button class="btn" id="exportBtn" style="display:none; margin-top:8px;">⬇ Export workspace (JSON)</button>
+    </section>
+
+    <button class="btn" id="startOverBtn" style="margin-top:10px;">↻ Start over</button>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
