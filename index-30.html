@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Katy Translate</title>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@400;600&family=Source+Sans+Pro:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Katy Translate</h1>
+  <div class="tagline">A visual translator that shows its uncertainty instead of hiding it.</div>
+
+  <div id="dropzone" class="dropzone">
+    <div style="font-size:15px;">📷 Upload or capture a photo of text</div>
+    <div class="hint">Signage, a page, an inscription — anything with writing on it. Tap a word to select it, or drag across several to grab a phrase.</div>
+  </div>
+  <input id="fileInput" type="file" accept="image/*" style="display:none" />
+
+  <div id="app" style="display:none;">
+    <section class="panel" id="settingsPanel">
+      <h2>Settings</h2>
+      <div class="hint" style="margin-bottom:8px;">Optional — only needed for "✨ Explain" and "🔍 Attempt AI reading" below. Paste your own Anthropic API key. It's saved <strong>only in this browser's local storage on this device</strong> — it is never written into these files, never committed to a repo, and never sent anywhere except directly to Anthropic when you use those two features. API calls are billed to your key by Anthropic. <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:#c9b78c;">Get a key at console.anthropic.com</a>.</div>
+      <div class="rowline">
+        <input id="apiKeyInput" type="password" placeholder="sk-ant-..." style="flex:1;min-width:180px;padding:6px 8px;border-radius:5px;background:#1e1b14;color:#e8e1d3;border:1px solid #3a3527;font-family:inherit;font-size:12.5px;" />
+        <button class="btn" id="saveKeyBtn">Save key</button>
+        <button class="btn" id="clearKeyBtn">Clear key</button>
+        <span id="keyStatus" style="font-size:12px;color:#8fae9a;"></span>
+      </div>
+      <label class="rowline" style="margin-top:10px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="autoAiRead" />
+        Automatically attempt AI reading every time I scan a photo (no extra click) — uses your API key and costs money per scan
+      </label>
+      <div class="rowline" style="margin-top:10px;">
+        <label for="voiceSelect" style="font-size:13px;">Read-aloud voice:</label>
+        <select id="voiceSelect" style="flex:1;min-width:180px;"></select>
+        <button class="btn" id="voiceTestBtn">🔊 Test</button>
+      </div>
+      <div class="hint" style="margin-top:4px;">Defaults to the best-sounding voice your device has for each language. Quality depends on your OS/browser — some ship several voices per language, some ship only one flat-sounding one.</div>
+      <div class="hint" style="margin-top:12px;"><strong>Custom OCR model (free, no API key)</strong> — for scripts with no built-in option here, like cuneiform. Point this at any community-trained Tesseract model, e.g. Akkadian, Ancient Greek, or Old Persian from <a href="https://github.com/tesseract-ocr/tessdata_contrib" target="_blank" style="color:#c9b78c;">tesseract-ocr/tessdata_contrib</a> (official, Apache-licensed), or Old Persian from <a href="https://github.com/Melanee-Melanee/Old-Persian-Cuneiform-OCR" target="_blank" style="color:#c9b78c;">Melanee-Melanee/Old-Persian-Cuneiform-OCR</a> (personal/non-commercial use only — see its license). Open the model file on GitHub, click "Raw" to get its direct URL, and paste the folder (everything up to the filename) below.</div>
+      <div class="rowline" style="margin-top:6px;">
+        <input id="customOcrCode" type="text" placeholder="code, e.g. akk" style="width:110px;padding:6px 8px;border-radius:5px;background:#1e1b14;color:#e8e1d3;border:1px solid #3a3527;font-family:inherit;font-size:12.5px;" />
+        <input id="customOcrPath" type="text" placeholder="folder URL containing {code}.traineddata" style="flex:1;min-width:200px;padding:6px 8px;border-radius:5px;background:#1e1b14;color:#e8e1d3;border:1px solid #3a3527;font-family:inherit;font-size:12.5px;" />
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="customOcrGzip" /> gzip (.gz)</label>
+      </div>
+    </section>
+
+    <div class="toolbar">
+      <button class="btn" id="newImageBtn">New image</button>
+      <button class="btn" data-mode="standard">Standard</button>
+      <button class="btn" data-mode="broad">Broad Scan</button>
+      <button class="btn" data-mode="ancient">Ancient Mode</button>
+      <button class="btn" data-mode="manual">Manual Select</button>
+      <button class="btn" id="heatmapBtn">Heat map off</button>
+      <select id="ocrLang" title="Which script/alphabet is in the photo"></select>
+      <button class="btn primary" id="scanBtn">Scan image</button>
+    </div>
+    <div class="hint" id="ocrHint" style="margin:-4px 0 4px;">Set this to match the writing in your photo — an English reader can't read Greek letters, and neither can the OCR engine unless it's told to expect them.</div>
+    <div class="status" id="status"></div>
+
+    <div class="stage" id="stage">
+      <img id="mainImage" alt="scan target" />
+    </div>
+
+    <div id="ancientNote" class="ancientNote" style="display:none;">
+      Ancient Mode preserves every detected shape without filtering by confidence. Use "Analyze symbols" below to segment, count, and export glyphs for manual study rather than trusting an auto-translation.
+    </div>
+
+    <section class="panel">
+      <h2>Selection</h2>
+      <div class="selectionText" id="selectionText"><span class="empty">Tap boxes on the image to build a selection.</span></div>
+      <div class="rowline" style="margin-bottom:8px;">
+        <button class="btn" id="selectAllBtn">☑ Select all</button>
+        <button class="btn" id="clearSelectionBtn">✕ Clear selection</button>
+        <button class="btn" id="speakSelectionBtn">🔊 Read selection</button>
+      </div>
+      <details style="margin-bottom:10px;">
+        <summary style="cursor:pointer;font-size:12.5px;color:#9c9382;">Type or paste text instead (for scripts OCR can't read — cuneiform, undeciphered scripts, medieval hands)</summary>
+        <textarea id="manualText" rows="3" style="width:100%;margin-top:8px;background:#1e1b14;color:#e8e1d3;border:1px solid #3a3527;border-radius:5px;padding:8px;font-family:inherit;font-size:13.5px;" placeholder="Your own reading or transliteration of the text — this overrides tapped/swiped boxes below while it has content."></textarea>
+      </details>
+      <div class="rowline">
+        <select id="sourceLang"></select>
+        <span>→</span>
+        <select id="targetLang"></select>
+        <button class="btn primary" id="translateBtn">Translate</button>
+        <button class="btn" id="explainBtn">✨ Explain</button>
+        <button class="btn" id="reverseBtn">↺ Reverse check</button>
+        <button class="btn" id="saveNoteBtn">💾 Save to workspace</button>
+      </div>
+      <div id="translationResult"></div>
+      <div id="explanationResult"></div>
+      <div id="reverseResult"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Translation Chain</h2>
+      <div id="chainChips"></div>
+      <div class="rowline">
+        <select id="chainAddSelect"></select>
+        <button class="btn" id="chainAddBtn">+ Add language</button>
+        <button class="btn primary" id="chainRunBtn">Run chain</button>
+      </div>
+      <div id="chainResults" style="margin-top:12px;"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Ancient Text Workspace</h2>
+      <div class="hint" style="margin-bottom:8px;">For scripts with no OCR/translation model at all — cuneiform, the Voynich manuscript, and other undeciphered or untrained scripts — "Analyze symbols" can't translate what no one can read, but it can segment, count, and export the individual glyphs for side-by-side comparison, which is how that research actually gets done. "Attempt AI reading" instead sends the photo to Claude directly and asks it to make an honest, hedged attempt — real script/period identification where possible, and a plain "I can't reliably read the specific signs" where that's the truth, rather than a confident-sounding invented translation.</div>
+      <div class="rowline">
+        <button class="btn" id="analyzeSymbolsBtn">Analyze symbols</button>
+        <button class="btn" id="aiReadBtn">🔍 Attempt AI reading (uses your API key)</button>
+      </div>
+      <div id="symbolResult"></div>
+      <div id="aiReadResult"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Research Workspace</h2>
+      <div id="notesList"><div class="empty">Saved selections will appear here.</div></div>
+      <button class="btn" id="exportBtn" style="display:none; margin-top:8px;">⬇ Export workspace (JSON)</button>
+    </section>
+
+    <button class="btn" id="startOverBtn" style="margin-top:10px;">↻ Start over</button>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
