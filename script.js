@@ -202,9 +202,13 @@ function setStatus(msg) { $("status").textContent = msg || ""; }
 $("dropzone").addEventListener("click", () => $("fileInput").click());
 $("newImageBtn").addEventListener("click", () => $("fileInput").click());
 $("fileInput").addEventListener("change", e => handleFile(e.target.files[0]));
+// Camera: on a phone this opens the camera directly; on a laptop it opens a file picker.
+$("cameraBtn").addEventListener("click", e => { e.stopPropagation(); $("cameraInput").click(); });
+$("cameraInput").addEventListener("change", e => handleFile(e.target.files[0], true));
 
-function handleFile(file) {
+function handleFile(file, autoScan) {
   if (!file) return;
+  pendingAutoScan = !!autoScan;
   const reader = new FileReader();
   reader.onload = e => {
     $("mainImage").src = e.target.result;
@@ -226,7 +230,9 @@ function handleFile(file) {
 $("mainImage").addEventListener("load", () => {
   state.naturalW = $("mainImage").naturalWidth;
   state.naturalH = $("mainImage").naturalHeight;
+  if (pendingAutoScan) { pendingAutoScan = false; $("scanBtn").click(); }
 });
+let pendingAutoScan = false;
 
 document.querySelectorAll("[data-mode]").forEach(btn => {
   btn.addEventListener("click", () => {
@@ -270,7 +276,10 @@ function renderBoxes() {
     div.title = r.text + " · " + Math.round(r.confidence) + "% confidence";
     div.addEventListener("click", () => {
       if (dragSelected) { dragSelected = false; return; } // a drag just ended on this box; don't also toggle it
-      state.selectedIds.has(r.id) ? state.selectedIds.delete(r.id) : state.selectedIds.add(r.id);
+      // 2020 camera behavior: tapping a word translates that word. Tapping
+      // again on the same word clears it; tapping another word replaces it.
+      const alreadyOnlyThis = state.selectedIds.size === 1 && state.selectedIds.has(r.id);
+      state.selectedIds = alreadyOnlyThis ? new Set() : new Set([r.id]);
       renderBoxes(); renderSelectionText();
       setOutput(""); $("explanationResult").innerHTML = ""; $("reverseResult").innerHTML = "";
     });
@@ -528,14 +537,11 @@ $("scanBtn").addEventListener("click", async () => {
     }));
     renderBoxes();
     setStatus("Found " + state.regions.length + " region" + (state.regions.length === 1 ? "" : "s") + ".");
-    // Import-from-photo behavior: select everything found and translate it
-    // immediately — no tapping words first. Free path (OCR + MyMemory),
-    // no API key needed. You can still deselect/reselect words afterward
-    // to translate just a phrase instead of the whole photo.
+    // 2020 camera behavior: show the translations over the photo, then the
+    // user taps a word to translate it. Nothing is selected automatically.
     if (state.regions.length > 0) {
-      state.selectedIds = new Set(state.regions.map(r => r.id));
-      renderBoxes(); renderSelectionText();
-      await runTranslate();
+      setStatus("Tap a word to translate it. Swipe across several to translate a phrase.");
+      if (!state.overlayOn) $("overlayToggleBtn").click();
     }
     if ($("autoAiRead").checked && getApiKey()) {
       setStatus("Found " + state.regions.length + " region" + (state.regions.length === 1 ? "" : "s") + " — also asking Claude for a reading attempt…");

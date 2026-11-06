@@ -59,9 +59,14 @@
   <section class="card photo" id="photoSection">
     <h2>Photo</h2>
     <div id="dropzone" class="dropzone">
-      <div class="dz-title">📷 Upload or take a photo of text</div>
-      <div class="hint">Signage, a page, an inscription. Tap a word to translate it, or drag across several to grab a phrase.</div>
+      <div class="dz-title">📷 Translate text in a photo</div>
+      <div class="hint">Signage, a page, an inscription. The translations appear over the photo; tap a word to translate it, or drag across several to grab a phrase.</div>
+      <div class="dz-actions">
+        <button class="btn primary" id="cameraBtn">📷 Take photo</button>
+        <button class="btn" id="uploadBtn">Upload photo</button>
+      </div>
     </div>
+    <input id="cameraInput" type="file" accept="image/*" capture="environment" style="display:none" />
     <input id="fileInput" type="file" accept="image/*" style="display:none" />
 
     <div id="app" style="display:none;">
