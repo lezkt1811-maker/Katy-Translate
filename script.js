@@ -213,7 +213,7 @@ function handleFile(file) {
     state.regions = []; state.selectedIds = new Set();
     $("manualText").value = "";
     renderBoxes(); renderSelectionText();
-    $("translationResult").innerHTML = ""; $("explanationResult").innerHTML = ""; $("reverseResult").innerHTML = "";
+    setOutput(""); $("explanationResult").innerHTML = ""; $("reverseResult").innerHTML = "";
     $("chainResults").innerHTML = ""; $("symbolResult").innerHTML = "";
     state.overlayOn = false; state.lineOverlays = [];
     document.querySelectorAll(".line-overlay").forEach(el => el.remove());
@@ -272,7 +272,7 @@ function renderBoxes() {
       if (dragSelected) { dragSelected = false; return; } // a drag just ended on this box; don't also toggle it
       state.selectedIds.has(r.id) ? state.selectedIds.delete(r.id) : state.selectedIds.add(r.id);
       renderBoxes(); renderSelectionText();
-      $("translationResult").innerHTML = ""; $("explanationResult").innerHTML = ""; $("reverseResult").innerHTML = "";
+      setOutput(""); $("explanationResult").innerHTML = ""; $("reverseResult").innerHTML = "";
     });
     $("stage").appendChild(div);
   });
@@ -391,13 +391,17 @@ function selectedText() {
 }
 function renderSelectionText() {
   const manual = $("manualText").value.trim();
-  if (manual) { $("selectionText").innerHTML = escapeHtml(manual) + ' <span style="color:#8fae9a;font-size:11.5px;">(typed text)</span>'; return; }
-  const t = selectedText();
-  $("selectionText").innerHTML = t ? escapeHtml(t) : '<span class="empty">Tap boxes on the image to build a selection.</span>';
+  if (manual) { $("selectionText").innerHTML = escapeHtml(manual) + ' <span style="color:#5f6368;font-size:12px;">(typed text)</span>'; }
+  else {
+    const t = selectedText();
+    $("selectionText").innerHTML = t ? escapeHtml(t) : '<span class="empty">Tap boxes on the image to translate them.</span>';
+  }
+  // Like the 2020 text view: translate as the text or selection changes.
+  scheduleTranslate();
 }
 $("manualText").addEventListener("input", () => {
   renderSelectionText();
-  $("translationResult").innerHTML = ""; $("explanationResult").innerHTML = ""; $("reverseResult").innerHTML = "";
+  $("explanationResult").innerHTML = ""; $("reverseResult").innerHTML = "";
 });
 function escapeHtml(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
@@ -413,7 +417,7 @@ $("clearSelectionBtn").addEventListener("click", () => {
   state.selectedIds.clear();
   $("manualText").value = "";
   renderBoxes(); renderSelectionText();
-  $("translationResult").innerHTML = ""; $("explanationResult").innerHTML = ""; $("reverseResult").innerHTML = "";
+  setOutput(""); $("explanationResult").innerHTML = ""; $("reverseResult").innerHTML = "";
 });
 
 /* ============================================================
@@ -462,7 +466,7 @@ $("stage").addEventListener("pointerup", () => {
   if (swipeBox) { swipeBox.remove(); swipeBox = null; }
   swipeActive = false;
   if (dragSelected) {
-    $("translationResult").innerHTML = ""; $("explanationResult").innerHTML = ""; $("reverseResult").innerHTML = "";
+    setOutput(""); $("explanationResult").innerHTML = ""; $("reverseResult").innerHTML = "";
     setTimeout(() => { dragSelected = false; }, 0);
   }
 });
@@ -870,36 +874,86 @@ async function runAiRead(auto) {
 }
 $("aiReadBtn").addEventListener("click", () => runAiRead(false));
 
+/* ---- Live translation (2020 Google Translate style) ----
+   Translates as you type or as you select boxes on a photo, after a short
+   pause, so you never have to press a Translate button. A sequence number
+   makes sure a slow, older request can't overwrite a newer result. */
+let runSeq = 0, liveTimer = null;
+let lastOut = "", lastOutLang = "en";
+
+function setOutput(html) {
+  $("translationResult").innerHTML = html;   // mirror under the photo selection
+  $("outputPane").innerHTML = html;          // main output pane at the top
+}
+function scheduleTranslate(delay) {
+  clearTimeout(liveTimer);
+  liveTimer = setTimeout(runTranslate, delay == null ? 600 : delay);
+}
+
 async function runTranslate() {
-  const t = selectedText(); if (!t) return;
-  $("translateBtn").disabled = true; $("translateBtn").textContent = "Translating…";
+  const mySeq = ++runSeq;
+  const t = selectedText();
+  if (!t) { lastOut = ""; setOutput(""); return; }
+  const fromPhoto = !$("manualText").value.trim();
+  const tgt = $("targetLang").value;
   try {
     let src = $("sourceLang").value;
     let detectedNote = "";
     if (src === "auto") {
-      $("translateBtn").textContent = "Detecting language…";
       const detected = await detectLanguage(t);
-      if (detected) {
-        src = detected;
-        detectedNote = "Detected language: " + langLabel(detected);
-      } else {
-        src = "en";
-        detectedNote = "Couldn't confidently detect the language — assumed English.";
-      }
-      $("translateBtn").textContent = "Translating…";
+      if (mySeq !== runSeq) return;
+      if (detected) { src = detected; detectedNote = "Detected: " + langLabel(detected); }
+      else { src = "en"; detectedNote = "Couldn't confidently detect the language, so it was treated as English."; }
     }
-    const { out, engineNote } = await translateWithSelectedEngine(t, src, $("targetLang").value,
-      (i, n) => setStatus("Translating part " + i + " of " + n + "…"));
+    const { out, engineNote } = await translateWithSelectedEngine(t, src, tgt,
+      (i, n) => { if (mySeq === runSeq) setStatus("Translating part " + i + " of " + n + "…"); });
+    if (mySeq !== runSeq) return;
     setStatus("");
-    $("translationResult").innerHTML =
-      (detectedNote ? '<div style="font-size:12px;color:#9c9382;margin-bottom:6px;">' + escapeHtml(detectedNote) + '</div>' : '') +
-      (engineNote ? '<div style="font-size:12px;color:#c9a86a;margin-bottom:6px;">' + escapeHtml(engineNote) + '</div>' : '') +
-      '<div class="result-box">' + escapeHtml(out) +
-      ' <button class="btn speak-btn" data-target="translationResult" data-lang="' + escapeHtml($("targetLang").value) + '" title="Read aloud">🔊</button></div>';
-    $("translationResult").querySelector(".speak-btn").addEventListener("click", () => speak(out, $("targetLang").value));
-  } catch { $("translationResult").innerHTML = '<div class="result-box">Translation request failed.</div>'; }
-  $("translateBtn").disabled = false; $("translateBtn").textContent = "Translate";
+    lastOut = out; lastOutLang = tgt;
+    setOutput(
+      (fromPhoto ? '<div class="meta">From photo</div>' : '') +
+      (detectedNote ? '<div class="meta">' + escapeHtml(detectedNote) + '</div>' : '') +
+      (engineNote ? '<div class="meta warn">' + escapeHtml(engineNote) + '</div>' : '') +
+      '<div class="result-text">' + escapeHtml(out) + '</div>' +
+      '<div class="result-actions">' +
+        '<button class="iconbtn speak-btn" title="Listen" aria-label="Listen">🔊</button>' +
+        '<button class="iconbtn copy-btn" title="Copy" aria-label="Copy translation">📋</button>' +
+      '</div>');
+  } catch {
+    if (mySeq === runSeq) setOutput('<div class="result-text">Translation request failed. Check your connection and try again.</div>');
+  }
 }
+
+// Listen / Copy buttons in the output panes (event delegation, so they work in both places).
+document.addEventListener("click", e => {
+  if (e.target.closest(".speak-btn") && lastOut) speak(lastOut, lastOutLang);
+  if (e.target.closest(".copy-btn") && lastOut && navigator.clipboard) {
+    navigator.clipboard.writeText(lastOut).then(() => setStatus("Copied."), () => setStatus("Couldn't copy."));
+  }
+});
+
+// Swap: the target becomes the source, and the translation moves into the input (as in 2020).
+$("swapLangBtn").addEventListener("click", () => {
+  const s = $("sourceLang").value, t = $("targetLang").value;
+  let newSrc = t, newTgt;
+  if (s === "auto") newTgt = t === "en" ? "es" : "en";
+  else newTgt = s;
+  $("sourceLang").value = newSrc;
+  $("targetLang").value = newTgt;
+  if (lastOut) $("manualText").value = lastOut;
+  renderSelectionText();
+});
+
+// X button: clear the typed text (and the output with it).
+$("clearInputBtn").addEventListener("click", () => {
+  $("manualText").value = "";
+  renderSelectionText();
+});
+
+// Language changes re-translate immediately.
+$("sourceLang").addEventListener("change", () => scheduleTranslate(0));
+$("targetLang").addEventListener("change", () => scheduleTranslate(0));
+
 $("translateBtn").addEventListener("click", runTranslate);
 
 /* ============================================================
