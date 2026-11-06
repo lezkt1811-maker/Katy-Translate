@@ -54,6 +54,7 @@
       <button class="btn" data-mode="ancient">Ancient Mode</button>
       <button class="btn" data-mode="manual">Manual Select</button>
       <button class="btn" id="heatmapBtn">Heat map off</button>
+      <button class="btn" id="overlayToggleBtn">🖼️ Show on image</button>
       <select id="ocrLang" title="Which script/alphabet is in the photo"></select>
       <button class="btn primary" id="scanBtn">Scan image</button>
     </div>
@@ -62,6 +63,7 @@
 
     <div class="stage" id="stage">
       <img id="mainImage" alt="scan target" />
+      <div id="scanOverlay" class="scanOverlay" style="display:none;"><span>Scanning…</span></div>
     </div>
 
     <div id="ancientNote" class="ancientNote" style="display:none;">
@@ -80,6 +82,12 @@
         <summary style="cursor:pointer;font-size:12.5px;color:#9c9382;">Type or paste text instead (for scripts OCR can't read — cuneiform, undeciphered scripts, medieval hands)</summary>
         <textarea id="manualText" rows="3" style="width:100%;margin-top:8px;background:#1e1b14;color:#e8e1d3;border:1px solid #3a3527;border-radius:5px;padding:8px;font-family:inherit;font-size:13.5px;" placeholder="Your own reading or transliteration of the text — this overrides tapped/swiped boxes below while it has content."></textarea>
       </details>
+      <div class="rowline" style="margin-bottom:6px;font-size:12.5px;">
+        <span style="color:#9c9382;">Translate with:</span>
+        <label style="cursor:pointer;"><input type="radio" name="translateEngine" id="engineMyMemory" value="mymemory" checked /> MyMemory (online, free)</label>
+        <label style="cursor:pointer;"><input type="radio" name="translateEngine" id="engineLocal" value="local" /> Local NLLB (in-browser, large first download)</label>
+      </div>
+      <div id="localEngineStatus" class="hint" style="display:none;margin-bottom:6px;"></div>
       <div class="rowline">
         <select id="sourceLang"></select>
         <span>→</span>
