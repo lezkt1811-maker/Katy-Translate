@@ -149,7 +149,8 @@ async function detectLanguage(text) {
    Codes are Tesseract traineddata codes, not ISO 639-1.
    ============================================================ */
 const OCR_LANGS = [
-  { code: "eng", label: "English / Latin script (default)" },
+  { code: "auto", label: "Detect all (default: Latin, Cyrillic, and more)" },
+  { code: "eng", label: "English only" },
   { code: "spa", label: "Spanish" }, { code: "fra", label: "French" },
   { code: "deu", label: "German" }, { code: "ita", label: "Italian" },
   { code: "por", label: "Portuguese" }, { code: "nld", label: "Dutch" },
@@ -169,7 +170,7 @@ const OCR_LANGS = [
 
 let state = {
   regions: [], selectedIds: new Set(), mode: "standard", heatmap: false,
-  chain: ["en", "ar", "de"], notes: [], naturalW: 0, naturalH: 0, ocrLang: "eng",
+  chain: ["en", "ar", "de"], notes: [], naturalW: 0, naturalH: 0, ocrLang: "auto",
   overlayOn: false, lineOverlays: [],
 };
 
@@ -194,7 +195,7 @@ $("chainAddSelect").value = "fr";
 OCR_LANGS.forEach(l => {
   const o = document.createElement("option"); o.value = l.code; o.textContent = l.label; $("ocrLang").appendChild(o);
 });
-$("ocrLang").value = "eng";
+$("ocrLang").value = "auto";
 $("ocrLang").addEventListener("change", () => { state.ocrLang = $("ocrLang").value; });
 
 function setStatus(msg) { $("status").textContent = msg || ""; }
@@ -261,6 +262,7 @@ function scale() {
 
 function confTier(c) { return c >= 80 ? "high" : c >= 50 ? "mid" : "low"; }
 
+let hoverId = null; // the box under the mouse pointer, if any
 function renderBoxes() {
   document.querySelectorAll(".box").forEach(b => b.remove());
   const s = scale();
@@ -282,6 +284,18 @@ function renderBoxes() {
       state.selectedIds.has(r.id) ? state.selectedIds.delete(r.id) : state.selectedIds.add(r.id);
       renderBoxes(); renderSelectionText();
       $("explanationResult").innerHTML = ""; $("reverseResult").innerHTML = "";
+    });
+    // Mouse hover: the box you point at turns blue and that one word is translated
+    // right away. Moving off the box goes back to the current selection.
+    div.addEventListener("pointerenter", e => {
+      if (e.pointerType !== "mouse") return;
+      hoverId = r.id; div.classList.add("hover");
+      renderSelectionText();
+    });
+    div.addEventListener("pointerleave", e => {
+      if (e.pointerType !== "mouse") return;
+      hoverId = null; div.classList.remove("hover");
+      renderSelectionText();
     });
     $("stage").appendChild(div);
   });
@@ -394,12 +408,53 @@ $("overlayToggleBtn").addEventListener("click", async () => {
   }
 });
 
+function selectedRows() {
+  const ids = hoverId ? new Set([hoverId]) : state.selectedIds; // hovering shows just that word
+  const regs = state.regions.filter(r => ids.has(r.id))
+    .sort((a, b) => a.bbox.y0 - b.bbox.y0 || a.bbox.x0 - b.bbox.x0);
+  const rows = [];
+  for (const r of regs) {
+    const yc = (r.bbox.y0 + r.bbox.y1) / 2, h = r.bbox.y1 - r.bbox.y0;
+    const last = rows[rows.length - 1];
+    if (last && Math.abs(yc - last.yc) < 0.6 * Math.max(h, last.h)) { last.regs.push(r); }
+    else rows.push({ regs: [r], yc, h });
+  }
+  return rows.map(row => row.regs.slice().sort((a, b) => a.bbox.x0 - b.bbox.x0));
+}
+function scriptOf(word) {
+  if (/[Ѐ-ӿ]/.test(word)) return "cyr";
+  if (/[Ͱ-Ͽ]/.test(word)) return "grk";
+  if (/[؀-ۿ]/.test(word)) return "ara";
+  if (/[֐-׿]/.test(word)) return "heb";
+  if (/[ऀ-ॿ]/.test(word)) return "hin";
+  if (/[฀-๿]/.test(word)) return "tha";
+  if (/[぀-ヿ]/.test(word)) return "jpn";
+  if (/[가-힯]/.test(word)) return "kor";
+  if (/[一-鿿]/.test(word)) return "cjk";
+  if (/[A-Za-zÀ-ÿ]/.test(word)) return "lat";
+  return null; // numbers and punctuation: keep with the words around them
+}
+/* Splits the selection into pieces of one script each, per row.
+   Used for translation, so each piece gets its own language. */
+function selectedSegments() {
+  const manual = $("manualText").value.trim();
+  if (manual) return [{ text: manual, script: null }];
+  const segs = [];
+  for (const row of selectedRows()) {
+    let cur = null;
+    for (const r of row) {
+      const s = scriptOf(r.text);
+      if (cur && (s === null || s === cur.script)) { cur.words.push(r.text); if (s && !cur.script) cur.script = s; }
+      else { if (cur) segs.push(cur); cur = { words: [r.text], script: s }; }
+    }
+    if (cur) segs.push(cur);
+  }
+  return segs.map(s => ({ text: s.words.join(" "), script: s.script })).filter(s => s.text.trim());
+}
 function selectedText() {
   const manual = $("manualText").value.trim();
   if (manual) return manual;
-  return state.regions.filter(r => state.selectedIds.has(r.id))
-    .sort((a, b) => a.bbox.y0 - b.bbox.y0 || a.bbox.x0 - b.bbox.x0)
-    .map(r => r.text).join(" ").trim();
+  return selectedRows().map(row => row.map(r => r.text).join(" ")).join("\n").trim();
 }
 function renderSelectionText() {
   const manual = $("manualText").value.trim();
@@ -507,6 +562,100 @@ function ensureTesseract() {
   });
 }
 
+/* ============================================================
+   Photo text recognition (2020-style: pick up text in almost any picture).
+   Each photo is read several ways, and the best reading of each box is kept:
+   - four versions of the image: grayscale with contrast, inverted (for light
+     text on dark, like stars or night signs), black-and-white threshold, and
+     inverted black-and-white
+   - sparse-text layout, so scattered words on a busy picture are found
+   - several languages read together, so mixed-language photos work
+   Slower than one pass, so the status line shows progress.
+   ============================================================ */
+const AUTO_OCR_LANGS = "eng+spa+fra+deu+ita+por+rus";
+
+function photoCanvas(imgEl, scale) {
+  const c = document.createElement("canvas");
+  c.width = Math.round(imgEl.naturalWidth * scale); c.height = Math.round(imgEl.naturalHeight * scale);
+  c.getContext("2d").drawImage(imgEl, 0, 0, c.width, c.height);
+  return c;
+}
+function photoVariants(src) {
+  const w = src.width, h = src.height;
+  const ctx = src.getContext("2d");
+  const data = ctx.getImageData(0, 0, w, h).data;
+  const gray = new Uint8ClampedArray(w * h);
+  const hist = new Array(256).fill(0);
+  for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
+    const g = Math.round(0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2]);
+    gray[i] = g; hist[g]++;
+  }
+  // Contrast stretch between the 1st and 99th percentile.
+  let lo = 0, hi = 255, acc = 0; const total = gray.length;
+  for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= total * 0.01) { lo = v; break; } }
+  acc = 0; for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= total * 0.01) { hi = v; break; } }
+  const span = Math.max(1, hi - lo);
+  const stretched = gray.map(g => Math.max(0, Math.min(255, Math.round((g - lo) * 255 / span))));
+  // Otsu threshold on the stretched image.
+  const h2 = new Array(256).fill(0); stretched.forEach(v => h2[v]++);
+  let sumAll = 0; for (let v = 0; v < 256; v++) sumAll += v * h2[v];
+  let wB = 0, sumB = 0, best = 0, thr = 128;
+  for (let t = 0; t < 256; t++) {
+    wB += h2[t]; if (!wB) continue;
+    const wF = total - wB; if (!wF) break;
+    sumB += t * h2[t];
+    const mB = sumB / wB, mF = (sumAll - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > best) { best = between; thr = t; }
+  }
+  const make = fn => {
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    const cx = c.getContext("2d"); const img = cx.createImageData(w, h);
+    for (let i = 0, p = 0; i < total; i++, p += 4) {
+      const v = fn(i); img.data[p] = img.data[p + 1] = img.data[p + 2] = v; img.data[p + 3] = 255;
+    }
+    cx.putImageData(img, 0, 0); return c;
+  };
+  return [
+    { name: "grayscale", canvas: make(i => stretched[i]) },
+    { name: "inverted", canvas: make(i => 255 - stretched[i]) },
+    { name: "black-and-white", canvas: make(i => stretched[i] > thr ? 255 : 0) },
+    { name: "inverted black-and-white", canvas: make(i => stretched[i] > thr ? 0 : 255) },
+  ];
+}
+function boxIoU(a, b) {
+  const x0 = Math.max(a.x0, b.x0), y0 = Math.max(a.y0, b.y0), x1 = Math.min(a.x1, b.x1), y1 = Math.min(a.y1, b.y1);
+  const inter = Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
+  const areaA = (a.x1 - a.x0) * (a.y1 - a.y0), areaB = (b.x1 - b.x0) * (b.y1 - b.y0);
+  return inter / Math.max(1, areaA + areaB - inter);
+}
+// Reads the photo with every version and keeps one reading per box.
+async function recognizePhoto(imgEl, langs, options, minConf, onProgress) {
+  const scale = Math.max(1, Math.min(2, 2400 / Math.max(imgEl.naturalWidth, imgEl.naturalHeight)));
+  const variants = photoVariants(photoCanvas(imgEl, scale));
+  const candidates = [];
+  for (let i = 0; i < variants.length; i++) {
+    const v = variants[i];
+    onProgress && onProgress("Reading photo, version " + (i + 1) + " of " + variants.length + " (" + v.name + ")…");
+    const r = await Tesseract.recognize(v.canvas, langs, Object.assign({
+      tessedit_pageseg_mode: "11",
+      logger: m => { if (m.status && m.progress != null && onProgress) onProgress("Reading photo, version " + (i + 1) + " of " + variants.length + " · " + Math.round(m.progress * 100) + "%"); }
+    }, options));
+    const unscale = b => ({ x0: b.x0 / scale, y0: b.y0 / scale, x1: b.x1 / scale, y1: b.y1 / scale });
+    for (const w of (r.data.words || [])) {
+      if (!w.text || !w.text.trim() || w.confidence < minConf) continue;
+      candidates.push({ text: w.text.trim(), confidence: w.confidence, bbox: unscale(w.bbox),
+        symbols: (w.symbols || []).map(s => ({ text: s.text, confidence: s.confidence, bbox: unscale(s.bbox) })) });
+    }
+  }
+  // Keep the most confident reading of each area; drop the duplicates from other versions.
+  candidates.sort((a, b) => b.confidence - a.confidence);
+  const kept = [];
+  for (const c of candidates) if (!kept.some(k => boxIoU(k.bbox, c.bbox) > 0.5)) kept.push(c);
+  kept.sort((a, b) => a.bbox.y0 - b.bbox.y0 || a.bbox.x0 - b.bbox.x0);
+  return kept;
+}
+
 $("scanBtn").addEventListener("click", async () => {
   if (!$("mainImage").src) return;
   $("scanBtn").disabled = true;
@@ -523,27 +672,15 @@ $("scanBtn").addEventListener("click", async () => {
       return;
     }
     const recognizeLang = isCustom ? customCode : state.ocrLang;
-    setStatus("Loading " + (isCustom ? customCode : (OCR_LANGS.find(l => l.code === state.ocrLang) || {}).label) + " script data…");
-    // Sparse-text mode (PSM 11) doesn't assume a coherent paragraph layout,
-    // so it finds scattered/isolated words (signage, inscriptions) that
-    // the default "assume one block of text" mode misses. Standard mode
-    // keeps the default layout assumption, which is faster and works
-    // well for a page of continuous prose.
-    const psm = (state.mode === "broad" || state.mode === "ancient") ? "11" : "3";
-    const recognizeOptions = {
-      tessedit_pageseg_mode: psm,
-      logger: m => { if (m.status && m.progress != null) setStatus(m.status + " · " + Math.round(m.progress * 100) + "%"); }
-    };
-    if (isCustom) {
-      recognizeOptions.langPath = customPath.replace(/\/$/, "");
-      recognizeOptions.gzip = $("customOcrGzip").checked;
-    }
-    const result = await Tesseract.recognize($("mainImage").src, recognizeLang, recognizeOptions);
-    const words = result.data.words || [];
-    const threshold = state.mode === "standard" ? 55 : 0;
-    state.regions = words.filter(w => w.text.trim().length > 0 && w.confidence >= threshold).map((w, i) => ({
+    const langs = recognizeLang === "auto" ? AUTO_OCR_LANGS : recognizeLang;
+    const label = recognizeLang === "auto" ? "several languages" : ((OCR_LANGS.find(l => l.code === state.ocrLang) || {}).label || recognizeLang);
+    setStatus("Reading the photo in " + label + "… (the first time, language data downloads)");
+    const customOpts = isCustom ? { langPath: customPath.replace(/\/$/, ""), gzip: $("customOcrGzip").checked } : {};
+    const minConf = state.mode === "standard" ? 15 : 0;
+    const found = await recognizePhoto($("mainImage"), langs, customOpts, minConf, msg => setStatus(msg));
+    state.regions = found.map((w, i) => ({
       id: "w" + i, text: w.text, confidence: w.confidence, bbox: w.bbox,
-      symbols: (w.symbols || []).map((s, j) => ({ id: "w" + i + "s" + j, text: s.text, confidence: s.confidence, bbox: s.bbox }))
+      symbols: w.symbols.map((s, j) => ({ id: "w" + i + "s" + j, text: s.text, confidence: s.confidence, bbox: s.bbox }))
     }));
     renderBoxes();
     setStatus("Found " + state.regions.length + " region" + (state.regions.length === 1 ? "" : "s") + ".");
@@ -914,31 +1051,56 @@ function scheduleTranslate(delay) {
   liveTimer = setTimeout(runTranslate, delay == null ? 800 : delay);
 }
 
+async function languageForSegment(text, script) {
+  const map = { cyr: ["ru", "Russian"], grk: ["el", "Greek"], ara: ["ar", "Arabic"], heb: ["he", "Hebrew"],
+    hin: ["hi", "Hindi"], tha: ["th", "Thai"], jpn: ["ja", "Japanese"], kor: ["ko", "Korean"], cjk: ["zh-CN", "Chinese"] };
+  if (script && map[script]) return { lang: map[script][0], note: map[script][1] };
+  const detected = await detectLanguage(text);
+  if (detected) return { lang: detected, note: "Detected: " + langLabel(detected) };
+  return { lang: "en", note: "Couldn't confidently detect the language, so it was treated as English." };
+}
+
 async function runTranslate() {
   const mySeq = ++runSeq;
-  const t = selectedText();
-  if (!t) { lastOut = ""; setOutput(""); return; }
+  const segs = selectedSegments();
+  if (!segs.length) { lastOut = ""; setOutput(""); return; }
   const fromPhoto = !$("manualText").value.trim();
   const tgt = $("targetLang").value;
+  const explicitSrc = $("sourceLang").value;
   try {
-    let src = $("sourceLang").value;
-    let detectedNote = "";
-    if (src === "auto") {
-      const detected = await detectLanguage(t);
+    // 1. Work out each piece's language.
+    const tagged = [];
+    for (const seg of segs) {
+      let src = explicitSrc, note = "";
+      if (src === "auto") { const g = await languageForSegment(seg.text, seg.script); src = g.lang; note = g.note; }
       if (mySeq !== runSeq) return;
-      if (detected) { src = detected; detectedNote = "Detected: " + langLabel(detected); }
-      else { src = "en"; detectedNote = "Couldn't confidently detect the language, so it was treated as English."; }
+      tagged.push({ text: seg.text, lang: src, note });
     }
-    const { out, engineNote } = await translateWithSelectedEngine(t, src, tgt,
-      (i, n) => { if (mySeq === runSeq) setStatus("Translating part " + i + " of " + n + "…"); });
-    if (mySeq !== runSeq) return;
+    // 2. Join neighbouring pieces in the same language into one paragraph, so a
+    //    whole page costs a few requests instead of one per line.
+    const runs = [];
+    for (const t of tagged) {
+      const last = runs[runs.length - 1];
+      if (last && last.lang === t.lang) last.text += " " + t.text;
+      else runs.push({ ...t });
+    }
+    // 3. Translate each paragraph.
+    const results = [];
+    for (let i = 0; i < runs.length; i++) {
+      const run = runs[i];
+      const { out, engineNote } = await translateWithSelectedEngine(run.text, run.lang, tgt,
+        (n, t) => { if (mySeq === runSeq) setStatus("Translating paragraph " + (i + 1) + " of " + runs.length + " (part " + n + " of " + t + ")…"); });
+      if (mySeq !== runSeq) return;
+      results.push({ out, note: run.note, engineNote });
+    }
     setStatus("");
-    lastOut = out; lastOutLang = tgt;
+    lastOut = results.map(r => r.out).join("\n"); lastOutLang = tgt;
     setOutput(
       (fromPhoto ? '<div class="meta">From photo</div>' : '') +
-      (detectedNote ? '<div class="meta">' + escapeHtml(detectedNote) + '</div>' : '') +
-      (engineNote ? '<div class="meta warn">' + escapeHtml(engineNote) + '</div>' : '') +
-      '<div class="result-text">' + escapeHtml(out) + '</div>' +
+      results.map(r =>
+        (r.note ? '<div class="meta">' + escapeHtml(r.note) + '</div>' : '') +
+        (r.engineNote ? '<div class="meta warn">' + escapeHtml(r.engineNote) + '</div>' : '') +
+        '<div class="result-text">' + escapeHtml(r.out) + '</div>').join('') +
       '<div class="result-actions">' +
         '<button class="iconbtn speak-btn" title="Listen" aria-label="Listen">🔊</button>' +
         '<button class="iconbtn copy-btn" title="Copy" aria-label="Copy translation">📋</button>' +
@@ -952,6 +1114,10 @@ async function runTranslate() {
   }
 }
 
+// Tapping or clicking the translation (blue bar) re-translates the current selection.
+document.addEventListener("click", e => {
+  if (e.target.closest("#translationResult") && !e.target.closest("button") && $("translationResult").textContent.trim()) runTranslate();
+});
 // Listen / Copy buttons in the output panes (event delegation, so they work in both places).
 document.addEventListener("click", e => {
   if (e.target.closest(".speak-btn") && lastOut) speak(lastOut, lastOutLang);

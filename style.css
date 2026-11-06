@@ -133,3 +133,6 @@ select, .field { padding:7px 10px; border-radius:4px; background:var(--card); co
 .panel:has(#selectionText) { background:var(--card); padding:0; overflow:hidden; border:none; box-shadow:0 1px 3px rgba(60,64,67,.3); }
 .panel:has(#selectionText) > h2 { padding:12px 14px 0; margin:0 0 8px; font-size:14px; color:var(--muted); }
 .panel:has(#selectionText) > .rowline { padding:0 12px 10px; }
+/* Hovering a box (mouse) shows it in blue: that word is the one being translated. */
+.box.hover { background:rgba(26,115,232,.7)!important; border:2px solid var(--blue)!important; }
+#selectionText { white-space:pre-line; }
