@@ -347,16 +347,17 @@ async function localNllbTranslate(text, src, tgt, onProgress) {
 }
 
 async function translateWithSelectedEngine(text, src, tgt, onProgress) {
-  const useLocal = true; // free offline engine first; MyMemory is the fallback
-  if (!useLocal) return { out: await myMemoryTranslate(text, src, tgt, onProgress), engineNote: "" };
+  // Online first: MyMemory is free and needs no key. If it fails (for example
+  // its daily free limit is used up), fall back to the free offline model.
   try {
-    const out = await localNllbTranslate(text, src, tgt, onProgress);
-    return { out, engineNote: "" };
-  } catch (err) {
-    setLocalEngineStatus("");
-    const out = await myMemoryTranslate(text, src, tgt, onProgress);
-    const reason = err && err.code === "UNSUPPORTED" ? "the local model doesn't support this language pair yet" : "the local model failed to load";
-    return { out, engineNote: "Fell back to MyMemory — " + reason + "." };
+    return { out: await myMemoryTranslate(text, src, tgt, onProgress), engineNote: "" };
+  } catch (onlineErr) {
+    try {
+      const out = await localNllbTranslate(text, src, tgt, onProgress);
+      return { out, engineNote: "Online translation was unavailable, so this used the offline model." };
+    } catch {
+      throw onlineErr;
+    }
   }
 }
 
