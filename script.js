@@ -277,7 +277,7 @@ function renderBoxes() {
     div.dataset.id = r.id;
     div.title = r.text + " · " + Math.round(r.confidence) + "% confidence";
     div.addEventListener("click", () => {
-      if (dragSelected) { dragSelected = false; return; } // a drag just ended on this box; don't also toggle it
+      if (Date.now() < suppressClickUntil) return; // a swipe just ended here; don't also toggle the box
       // Each tap adds or removes one box, so you can pick several boxes,
       // a row (by swiping), or everything (Select all). The translation
       // updates to match the current selection.
@@ -494,7 +494,8 @@ $("clearSelectionBtn").addEventListener("click", () => {
    and touch via Pointer Events. Separate from Manual Select's
    free-drawn OCR rectangles.
    ============================================================ */
-let dragSelected = false; // guards the click handler firing right after a drag ends
+let dragSelected = false; // set when a swipe actually selected boxes
+let suppressClickUntil = 0; // ignore the click that follows a swipe
 let swipeActive = false, swipeBox = null, swipeStartX = 0, swipeStartY = 0;
 
 $("stage").addEventListener("pointerdown", e => {
@@ -534,7 +535,7 @@ $("stage").addEventListener("pointerup", () => {
   swipeActive = false;
   if (dragSelected) {
     setOutput(""); $("explanationResult").innerHTML = ""; $("reverseResult").innerHTML = "";
-    setTimeout(() => { dragSelected = false; }, 0);
+    suppressClickUntil = Date.now() + 400; // the click that follows a swipe must not toggle the box back
   }
 });
 $("stage").addEventListener("pointercancel", () => {
@@ -982,7 +983,9 @@ $("autoAiRead").addEventListener("change", () => {
 
 const ENGINE_STORAGE = "palimpsest_translate_engine";
 const savedEngine = localStorage.getItem(ENGINE_STORAGE);
-if (savedEngine === "local") $("engineLocal").checked = true;
+// Free offline translation (NLLB, in the browser) is the default: no daily limit, no key.
+// MyMemory is the fallback if the local model can't load, and can be picked in the engine section.
+if (savedEngine === "mymemory") $("engineMyMemory").checked = true; else $("engineLocal").checked = true;
 document.querySelectorAll('input[name="translateEngine"]').forEach(el => el.addEventListener("change", () => {
   localStorage.setItem(ENGINE_STORAGE, $("engineLocal").checked ? "local" : "mymemory");
   setLocalEngineStatus("");

@@ -47,8 +47,8 @@
     <details class="more">
       <summary>Translation engine</summary>
       <div class="engine-opts">
-        <label><input type="radio" name="translateEngine" id="engineMyMemory" value="mymemory" checked /> Online (MyMemory, free)</label>
-        <label><input type="radio" name="translateEngine" id="engineLocal" value="local" /> Offline in browser (NLLB, large one-time download)</label>
+        <label><input type="radio" name="translateEngine" id="engineMyMemory" value="mymemory" /> Online (MyMemory, free, daily limit)</label>
+        <label><input type="radio" name="translateEngine" id="engineLocal" value="local" checked /> Free, no limit (runs in your browser; large one-time download)</label>
       </div>
       <div id="localEngineStatus" class="hint" style="display:none;"></div>
     </details>
@@ -105,7 +105,7 @@
           <button class="btn" id="speakSelectionBtn">🔊 Read selection</button>
         </div>
         <div class="rowline">
-          <button class="btn" id="explainBtn">✨ Explain</button>
+          <button class="btn" id="explainBtn" title="Paid: needs your own Anthropic API key">✨ Explain (paid)</button>
           <button class="btn" id="reverseBtn">↺ Reverse check</button>
           <button class="btn" id="saveNoteBtn">💾 Save to workspace</button>
         </div>
@@ -118,7 +118,7 @@
         <div class="hint" style="margin-bottom:8px;">For scripts with no OCR or translation model at all. "Analyze symbols" segments, counts, and exports the glyphs. "Attempt AI reading" sends the photo to Claude for an honest, hedged attempt (needs your API key).</div>
         <div class="rowline">
           <button class="btn" id="analyzeSymbolsBtn">Analyze symbols</button>
-          <button class="btn" id="aiReadBtn">🔍 Attempt AI reading (uses your API key)</button>
+          <button class="btn" id="aiReadBtn">🔍 Attempt AI reading (paid: your API key)</button>
         </div>
         <div id="symbolResult"></div>
         <div id="aiReadResult"></div>
