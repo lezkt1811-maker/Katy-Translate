@@ -539,6 +539,7 @@ function mergeReadings(list) {
 async function scanPhoto() {
   $("scanBtn").disabled = true;
   $("scanOverlay").style.display = "block";
+  $("scanBar").style.display = "block"; // sweeps left to right three times while reading
   try {
     await ensureTesseract();
     const all = [];
@@ -567,6 +568,7 @@ async function scanPhoto() {
   } finally {
     $("scanBtn").disabled = false;
     $("scanOverlay").style.display = "none";
+    $("scanBar").style.display = "none";
   }
 }
 $("scanBtn").addEventListener("click", scanPhoto);
