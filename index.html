@@ -10,165 +10,45 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="brand"><span class="logo">文A</span> Katy Translate</div>
-  <nav><a href="#settingsPanel">Settings</a></nav>
+<header class="hdr">
+  <button class="iconbtn light" id="newImageBtn" aria-label="Close photo">✕</button>
+  <span class="hdr-title">Tap or swipe the text you want to translate</span>
 </header>
 
-<main class="wrap" id="top">
-
-  <!-- ===== Tabs: switch between the Text and Photo screens ===== -->
-  <nav class="card tabs" aria-label="Mode">
-    <a class="tab active" href="#top">Text</a>
-    <a class="tab" href="#photoSection">📷 Photo</a>
-  </nav>
-
-  <!-- ===== Translator (the main screen, like the 2020 text view) ===== -->
-  <section class="card translator" id="translator" aria-label="Translator">
-
-    <div class="langbar">
-      <select id="sourceLang" aria-label="Translate from"></select>
-      <button class="swap" id="swapLangBtn" title="Swap languages" aria-label="Swap languages">⇄</button>
-      <select id="targetLang" aria-label="Translate to"></select>
+<main class="wrap">
+  <section id="dropzone" class="dropzone">
+    <div class="dz-title">Translate text in a photo</div>
+    <div class="hint">Point at text in almost any language. The English translation appears here.</div>
+    <div class="dz-actions">
+      <button class="btn primary" id="cameraBtn">📷 Take photo</button>
+      <button class="btn" id="uploadBtn">Upload photo</button>
     </div>
-
-    <div class="panes">
-      <div class="pane">
-        <textarea id="manualText" placeholder="Enter text" aria-label="Text to translate"></textarea>
-        <div class="pane-foot">
-          <button class="iconbtn" id="clearInputBtn" title="Clear" aria-label="Clear text">✕</button>
-        </div>
-      </div>
-      <div class="pane out">
-        <div class="outputPane" id="outputPane"></div>
-      </div>
-    </div>
-
-    <details class="more">
-      <summary>Translation engine</summary>
-      <div class="engine-opts">
-        <label><input type="radio" name="translateEngine" id="engineMyMemory" value="mymemory" /> Online (MyMemory, free, daily limit)</label>
-        <label><input type="radio" name="translateEngine" id="engineLocal" value="local" checked /> Free, no limit (runs in your browser; large one-time download)</label>
-      </div>
-      <div id="localEngineStatus" class="hint" style="display:none;"></div>
-    </details>
-
-    <!-- Kept for compatibility: translation now runs as you type or select. -->
-    <button class="btn" id="translateBtn" style="display:none;">Translate</button>
   </section>
+  <input id="fileInput" type="file" accept="image/*" hidden />
+  <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
 
-  <!-- ===== Photo tools ===== -->
-  <section class="card photo" id="photoSection">
-    <h2>Photo</h2>
-    <div id="dropzone" class="dropzone">
-      <div class="dz-title">📷 Translate text in a photo</div>
-      <div class="hint">Signage, a page, an inscription. The translations appear over the photo; tap a word to translate it, or drag across several to grab a phrase.</div>
-      <div class="dz-actions">
-        <button class="btn primary" id="cameraBtn">📷 Take photo</button>
-        <button class="btn" id="uploadBtn">Upload photo</button>
-      </div>
+  <section id="app" style="display:none;">
+    <div class="bar white">
+      <div id="selectionText"></div>
+      <button class="xbtn" id="clearSelectionBtn" aria-label="Clear selection">✕</button>
     </div>
-    <input id="cameraInput" type="file" accept="image/*" capture="environment" style="display:none" />
-    <input id="fileInput" type="file" accept="image/*" style="display:none" />
-
-    <div id="app" style="display:none;">
-      <div class="toolbar">
-        <button class="btn" id="newImageBtn">New image</button>
-        <button class="btn" data-mode="standard">Standard</button>
-        <button class="btn" data-mode="broad">Broad Scan</button>
-        <button class="btn" data-mode="ancient">Ancient Mode</button>
-        <button class="btn" data-mode="manual">Manual Select</button>
-        <button class="btn" id="heatmapBtn">Heat map off</button>
-        <button class="btn" id="overlayToggleBtn">🖼️ Show on image</button>
-        <select id="ocrLang" title="Which script/alphabet is in the photo"></select>
-        <button class="btn primary" id="scanBtn">Scan image</button>
-      </div>
-      <div class="hint" id="ocrHint">Set this to match the writing in your photo — the OCR engine can only find letters it's told to expect.</div>
-      <div class="status" id="status"></div>
-
-      <div class="stage" id="stage">
-        <img id="mainImage" alt="scan target" />
-        <div id="scanOverlay" class="scanOverlay" style="display:none;"><span>Scanning…</span></div>
-      </div>
-
-      <div id="ancientNote" class="ancientNote" style="display:none;">
-        Ancient Mode keeps every detected shape without filtering by confidence. Use "Analyze symbols" below to segment, count, and export glyphs for manual study.
-      </div>
-
-      <section class="panel">
-        <h2>Selected text and translation</h2>
-        <div class="selectionText" id="selectionText"><span class="empty">Tap boxes on the image to translate them.</span></div>
-        <div id="translationResult" class="mirror"></div>
-        <div class="rowline" style="margin:10px 0 8px;">
-          <button class="btn" id="selectAllBtn">☑ Select all</button>
-          <button class="btn" id="clearSelectionBtn">✕ Clear selection</button>
-          <button class="btn" id="speakSelectionBtn">🔊 Read selection</button>
-        </div>
-        <div class="rowline">
-          <button class="btn" id="explainBtn" title="Paid: needs your own Anthropic API key">✨ Explain (paid)</button>
-          <button class="btn" id="reverseBtn">↺ Reverse check</button>
-          <button class="btn" id="saveNoteBtn">💾 Save to workspace</button>
-        </div>
-        <div id="explanationResult"></div>
-        <div id="reverseResult"></div>
-      </section>
-
-      <section class="panel">
-        <h2>Ancient Text Workspace</h2>
-        <div class="hint" style="margin-bottom:8px;">For scripts with no OCR or translation model at all. "Analyze symbols" segments, counts, and exports the glyphs. "Attempt AI reading" sends the photo to Claude for an honest, hedged attempt (needs your API key).</div>
-        <div class="rowline">
-          <button class="btn" id="analyzeSymbolsBtn">Analyze symbols</button>
-          <button class="btn" id="aiReadBtn">🔍 Attempt AI reading (paid: your API key)</button>
-        </div>
-        <div id="symbolResult"></div>
-        <div id="aiReadResult"></div>
-      </section>
-
-      <section class="panel" id="settingsPanel">
-        <h2>Settings</h2>
-        <div class="hint" style="margin-bottom:8px;">Optional — only needed for "✨ Explain" and "🔍 Attempt AI reading". Your Anthropic API key is saved only in this browser's local storage and sent only to Anthropic. <a href="https://console.anthropic.com/settings/keys" target="_blank">Get a key</a>.</div>
-        <div class="rowline">
-          <input id="apiKeyInput" type="password" placeholder="sk-ant-..." class="field" style="flex:1;min-width:180px;" />
-          <button class="btn" id="saveKeyBtn">Save key</button>
-          <button class="btn" id="clearKeyBtn">Clear key</button>
-          <span id="keyStatus" class="keystatus"></span>
-        </div>
-        <label class="rowline" style="margin-top:10px;font-size:13px;cursor:pointer;">
-          <input type="checkbox" id="autoAiRead" />
-          Automatically attempt AI reading every time I scan a photo (costs money per scan)
-        </label>
-        <div class="rowline" style="margin-top:10px;">
-          <label for="voiceSelect" style="font-size:13px;">Read-aloud voice:</label>
-          <select id="voiceSelect" style="flex:1;min-width:180px;"></select>
-          <button class="btn" id="voiceTestBtn">🔊 Test</button>
-        </div>
-        <div class="hint" style="margin-top:12px;"><strong>Custom OCR model (free, no API key)</strong> — point this at any community Tesseract model, e.g. Akkadian or Old Persian from <a href="https://github.com/tesseract-ocr/tessdata_contrib" target="_blank">tessdata_contrib</a>. Paste the folder URL that contains the {code}.traineddata file.</div>
-        <div class="rowline" style="margin-top:6px;">
-          <input id="customOcrCode" type="text" placeholder="code, e.g. akk" class="field" style="width:110px;" />
-          <input id="customOcrPath" type="text" placeholder="folder URL containing {code}.traineddata" class="field" style="flex:1;min-width:200px;" />
-          <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="customOcrGzip" /> gzip (.gz)</label>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>Translation Chain</h2>
-        <div id="chainChips"></div>
-        <div class="rowline">
-          <select id="chainAddSelect"></select>
-          <button class="btn" id="chainAddBtn">+ Add language</button>
-          <button class="btn primary" id="chainRunBtn">Run chain</button>
-        </div>
-        <div id="chainResults" style="margin-top:12px;"></div>
-      </section>
-
-      <section class="panel">
-        <h2>Research Workspace</h2>
-        <div id="notesList"><div class="empty">Saved selections will appear here.</div></div>
-        <button class="btn" id="exportBtn" style="display:none; margin-top:8px;">⬇ Export workspace (JSON)</button>
-      </section>
-
-      <button class="btn" id="startOverBtn" style="margin-top:10px;">↻ Start over</button>
+    <div class="bar blue" id="translationBar">
+      <div id="translationResult"></div>
     </div>
+
+    <div class="stage" id="stage">
+      <img id="mainImage" alt="photo to translate" />
+      <div id="scanOverlay" class="scanOverlay" style="display:none;"><span>Reading the photo…</span></div>
+    </div>
+
+    <div class="controls">
+      <button class="btn" id="selectAllBtn">☑ Select all</button>
+      <button class="btn" id="clearAllBtn">Clear</button>
+      <button class="btn" id="scanBtn">Scan again</button>
+      <button class="btn" id="newPhotoBtn">📷 New photo</button>
+    </div>
+    <div class="status" id="status"></div>
+    <div class="hint" id="localEngineStatus" style="display:none;"></div>
   </section>
 </main>
 
