@@ -276,12 +276,12 @@ function renderBoxes() {
     div.title = r.text + " · " + Math.round(r.confidence) + "% confidence";
     div.addEventListener("click", () => {
       if (dragSelected) { dragSelected = false; return; } // a drag just ended on this box; don't also toggle it
-      // 2020 camera behavior: tapping a word translates that word. Tapping
-      // again on the same word clears it; tapping another word replaces it.
-      const alreadyOnlyThis = state.selectedIds.size === 1 && state.selectedIds.has(r.id);
-      state.selectedIds = alreadyOnlyThis ? new Set() : new Set([r.id]);
+      // Each tap adds or removes one box, so you can pick several boxes,
+      // a row (by swiping), or everything (Select all). The translation
+      // updates to match the current selection.
+      state.selectedIds.has(r.id) ? state.selectedIds.delete(r.id) : state.selectedIds.add(r.id);
       renderBoxes(); renderSelectionText();
-      setOutput(""); $("explanationResult").innerHTML = ""; $("reverseResult").innerHTML = "";
+      $("explanationResult").innerHTML = ""; $("reverseResult").innerHTML = "";
     });
     $("stage").appendChild(div);
   });
@@ -550,7 +550,7 @@ $("scanBtn").addEventListener("click", async () => {
     // 2020 camera behavior: show the translations over the photo, then the
     // user taps a word to translate it. Nothing is selected automatically.
     if (state.regions.length > 0) {
-      setStatus("Tap a word to translate it. Swipe across several to translate a phrase.");
+      setStatus("Tap boxes to select them, swipe across a row, or use Select all. The translation appears below the photo.");
       if (!state.overlayOn) $("overlayToggleBtn").click();
     }
     if ($("autoAiRead").checked && getApiKey()) {
@@ -906,7 +906,7 @@ let runSeq = 0, liveTimer = null;
 let lastOut = "", lastOutLang = "en";
 
 function setOutput(html) {
-  $("translationResult").innerHTML = html;   // mirror under the photo selection
+  $("translationResult").innerHTML = html.replace('<div class="meta">From photo</div>', ''); // blue bar under the photo
   $("outputPane").innerHTML = html;          // main output pane at the top
 }
 function scheduleTranslate(delay) {

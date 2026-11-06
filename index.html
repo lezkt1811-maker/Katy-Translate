@@ -96,9 +96,10 @@
       </div>
 
       <section class="panel">
-        <h2>Selection</h2>
+        <h2>Selected text and translation</h2>
         <div class="selectionText" id="selectionText"><span class="empty">Tap boxes on the image to translate them.</span></div>
-        <div class="rowline" style="margin-bottom:8px;">
+        <div id="translationResult" class="mirror"></div>
+        <div class="rowline" style="margin:10px 0 8px;">
           <button class="btn" id="selectAllBtn">☑ Select all</button>
           <button class="btn" id="clearSelectionBtn">✕ Clear selection</button>
           <button class="btn" id="speakSelectionBtn">🔊 Read selection</button>
@@ -108,7 +109,6 @@
           <button class="btn" id="reverseBtn">↺ Reverse check</button>
           <button class="btn" id="saveNoteBtn">💾 Save to workspace</button>
         </div>
-        <div id="translationResult" class="mirror"></div>
         <div id="explanationResult"></div>
         <div id="reverseResult"></div>
       </section>

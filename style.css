@@ -119,3 +119,17 @@ select, .field { padding:7px 10px; border-radius:4px; background:var(--card); co
 .dz-actions { display:flex; gap:10px; justify-content:center; margin-top:16px; flex-wrap:wrap; }
 
 .tabs { margin-bottom:16px; overflow:hidden; }
+
+/* ---- Photo result bars (2020 camera style) ----
+   White bar: the text found in the selected boxes (source language).
+   Blue bar: the translation of that text. Both sit under the photo. */
+#translationResult.mirror { margin-top:0; padding:14px 16px; background:#4285f4; color:#fff; border-left:none; border-radius:0 0 8px 8px; font-size:18px; line-height:1.4; }
+#translationResult.mirror .meta { color:rgba(255,255,255,.85); font-size:12.5px; margin-bottom:6px; }
+#translationResult.mirror .meta.warn { color:#fff3c4; }
+#translationResult.mirror .result-text { color:#fff; }
+#translationResult.mirror .iconbtn { color:#fff; }
+#translationResult.mirror .iconbtn:hover { background:rgba(255,255,255,.15); color:#fff; }
+#selectionText { background:#fff; color:var(--text); font-size:18px; line-height:1.4; padding:14px 16px; border:1px solid var(--line); border-radius:8px 8px 0 0; min-height:56px; margin-bottom:0; }
+.panel:has(#selectionText) { background:var(--card); padding:0; overflow:hidden; border:none; box-shadow:0 1px 3px rgba(60,64,67,.3); }
+.panel:has(#selectionText) > h2 { padding:12px 14px 0; margin:0 0 8px; font-size:14px; color:var(--muted); }
+.panel:has(#selectionText) > .rowline { padding:0 12px 10px; }
