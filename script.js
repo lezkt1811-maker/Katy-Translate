@@ -477,7 +477,7 @@ $("stage").addEventListener("pointermove", e => {
   const rect = $("stage").getBoundingClientRect();
   const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
   if (!swipeMoved && Math.hypot(cx - swipeStart.x, cy - swipeStart.y) < 6) return;
-  swipeMoved = true; e.preventDefault();
+  swipeMoved = true;
   const x = Math.min(cx, swipeStart.x), y = Math.min(cy, swipeStart.y);
   const w = Math.abs(cx - swipeStart.x), h = Math.abs(cy - swipeStart.y);
   Object.assign(swipeBox.style, { left: x + "px", top: y + "px", width: w + "px", height: h + "px" });
