@@ -540,25 +540,40 @@ async function scanPhoto() {
   $("scanBtn").disabled = true;
   $("scanOverlay").style.display = "block";
   $("scanBar").style.display = "block"; // sweeps left to right three times while reading
+  const all = [];
+  const failed = [];
+  // Keep whatever boxes the user already selected, matched by position.
+  const showRegions = (first) => {
+    const prev = state.regions.filter(r => state.selectedIds.has(r.id)).map(r => r.bbox);
+    state.regions = mergeReadings(all).map((w, i) => ({ id: "w" + i, text: w.text, confidence: w.confidence, bbox: w.bbox }));
+    state.selectedIds = new Set(state.regions.filter(r => prev.some(b => boxIoU(b, r.bbox) > 0.5)).map(r => r.id));
+    state.hoverId = null;
+    renderBoxes(); renderSelectionText();
+    if (first) setOutput("");
+  };
+  const runPack = async (p, variants) => {
+    try {
+      await readPack($("mainImage"), OCR_PACKS[p].langs, variants, pct => setStatus("Reading languages, group " + (p + 1) + " of " + OCR_PACKS.length + " · " + pct))
+        .then(got => all.push(...got));
+    } catch (err) {
+      failed.push(OCR_PACKS[p].langs); console.error("pack failed", OCR_PACKS[p].langs, err);
+    }
+  };
   try {
     await ensureTesseract();
-    const all = [];
-    const failed = [];
-    for (let p = 0; p < OCR_PACKS.length; p++) {
-      setStatus("Reading languages, pack " + (p + 1) + " of " + OCR_PACKS.length + "…");
-      try {
-        all.push(...await readPack($("mainImage"), OCR_PACKS[p].langs, OCR_PACKS[p].variants,
-          pct => setStatus("Reading languages, pack " + (p + 1) + " of " + OCR_PACKS.length + " · " + pct)));
-      } catch (err) {
-        // One language pack that fails to download shouldn't stop the rest of the photo.
-        failed.push(OCR_PACKS[p].langs); console.error("pack failed", OCR_PACKS[p].langs, err);
-      }
+    // Fast first pass: the main languages, two image versions. Boxes show as soon as it is done.
+    await runPack(0, 2);
+    if (failed.length === 1) throw new Error("main language pack failed to load");
+    showRegions(true);
+    $("scanOverlay").style.display = "none";
+    $("scanBar").style.display = "none";
+    setStatus("Found " + state.regions.length + " words. Reading more languages in the background…");
+    // The rest of the languages: their boxes are added as each group finishes.
+    for (let p = 1; p < OCR_PACKS.length; p++) {
+      await runPack(p, OCR_PACKS[p].variants);
+      showRegions(false);
     }
-    if (failed.length === OCR_PACKS.length) throw new Error("no language pack loaded");
-    state.regions = mergeReadings(all).map((w, i) => ({ id: "w" + i, text: w.text, confidence: w.confidence, bbox: w.bbox }));
-    state.selectedIds = new Set(); state.hoverId = null;
-    renderBoxes(); renderSelectionText(); setOutput("");
-    const note = failed.length ? " (" + failed.length + " language pack(s) couldn't load, so some languages may be missing.)" : "";
+    const note = failed.length ? " (" + failed.length + " language group(s) couldn't load.)" : "";
     setStatus((state.regions.length
       ? "Tap or swipe the boxes you want. Hover a box on a computer to preview one word."
       : "No text found in this photo. Try a sharper or brighter photo.") + note);
