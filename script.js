@@ -536,16 +536,125 @@ function mergeReadings(list) {
   for (const c of sorted) if (!kept.some(k => boxIoU(k.bbox, c.bbox) > 0.5)) kept.push(c);
   return kept.sort((a, b) => a.bbox.y0 - b.bbox.y0 || a.bbox.x0 - b.bbox.x0);
 }
+/* ---------- Text-line finder (step 1 of the 2015 method) ----------
+   Finds blobs of similar pixels that could be letters, keeps the ones that
+   look like letters, and joins nearby letters into lines. Used to drop OCR
+   words that sit on background (trees, signs, sky) and to rescue lines the
+   OCR missed. Works on a small copy of the photo for speed. */
+function findTextLines(canvas) {
+  const W = canvas.width, H = canvas.height;
+  const d = Math.min(1, 900 / Math.max(W, H));
+  const w = Math.max(1, Math.round(W * d)), h = Math.max(1, Math.round(H * d));
+  const small = document.createElement("canvas"); small.width = w; small.height = h;
+  small.getContext("2d").drawImage(canvas, 0, 0, w, h);
+  const px = small.getContext("2d").getImageData(0, 0, w, h).data;
+  const n = w * h, gray = new Uint8Array(n), hist = new Array(256).fill(0);
+  for (let i = 0, p = 0; i < n; i++, p += 4) {
+    const g = Math.round(0.299 * px[p] + 0.587 * px[p + 1] + 0.114 * px[p + 2]);
+    gray[i] = g; hist[g]++;
+  }
+  // Otsu threshold splits ink from background.
+  let sumAll = 0; for (let v = 0; v < 256; v++) sumAll += v * hist[v];
+  let wB = 0, sumB = 0, best = 0, thr = 128;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t]; if (!wB) continue;
+    const wF = n - wB; if (!wF) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB, mF = (sumAll - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > best) { best = between; thr = t; }
+  }
+  // Text is usually the smaller class of pixels, whichever colour it is.
+  let dark = 0; for (let i = 0; i < n; i++) if (gray[i] <= thr) dark++;
+  const inkIsDark = dark < n / 2;
+  const ink = new Uint8Array(n);
+  for (let i = 0; i < n; i++) ink[i] = (inkIsDark ? gray[i] <= thr : gray[i] > thr) ? 1 : 0;
+  // Connected blobs (8-connected).
+  const label = new Uint8Array(n), stack = new Int32Array(n);
+  const comps = [];
+  for (let start = 0; start < n; start++) {
+    if (!ink[start] || label[start]) continue;
+    let top = 0; stack[top++] = start; label[start] = 1;
+    let minx = w, maxx = 0, miny = h, maxy = 0, area = 0;
+    while (top > 0) {
+      const i = stack[--top]; const x = i % w, y = (i - x) / w;
+      area++;
+      if (x < minx) minx = x; if (x > maxx) maxx = x;
+      if (y < miny) miny = y; if (y > maxy) maxy = y;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        const j = ny * w + nx;
+        if (ink[j] && !label[j]) { label[j] = 1; stack[top++] = j; }
+      }
+    }
+    const bh = maxy - miny + 1, bw = maxx - minx + 1;
+    // Keep blobs that could be a letter: not specks, not whole objects.
+    if (area >= 6 && bh >= 4 && bh <= 0.35 * h && bw <= 0.6 * w) comps.push({ x0: minx, y0: miny, x1: maxx, y1: maxy });
+    if (comps.length > 4000) break;
+  }
+  // Join nearby letters on the same line.
+  comps.sort((a, b) => a.x0 - b.x0);
+  const lines = [];
+  for (const c of comps) {
+    const ch = c.y1 - c.y0 + 1;
+    const L = lines.find(L => {
+      const lh = L.y1 - L.y0 + 1;
+      const overlap = Math.min(L.y1, c.y1) - Math.max(L.y0, c.y0) + 1;
+      const gap = c.x0 - L.x1;
+      return overlap > 0.5 * Math.min(lh, ch) && gap < 2.0 * Math.max(lh, ch);
+    });
+    if (L) { L.x0 = Math.min(L.x0, c.x0); L.x1 = Math.max(L.x1, c.x1); L.y0 = Math.min(L.y0, c.y0); L.y1 = Math.max(L.y1, c.y1); }
+    else lines.push({ ...c });
+  }
+  // Back to canvas pixels, with a little padding; drop single specks.
+  return lines
+    .filter(L => (L.x1 - L.x0 + 1) >= 2 * (L.y1 - L.y0 + 1) * 0.5)
+    .map(L => {
+      const pad = 0.15 * (L.y1 - L.y0 + 1);
+      return { x0: Math.max(0, (L.x0 - pad) / d), y0: Math.max(0, (L.y0 - pad) / d),
+               x1: Math.min(W, (L.x1 + pad) / d), y1: Math.min(H, (L.y1 + pad) / d) };
+    });
+}
+function inAnyLine(box, lines) {
+  const cx = (box.x0 + box.x1) / 2, cy = (box.y0 + box.y1) / 2;
+  return lines.some(L => cx >= L.x0 && cx <= L.x1 && cy >= L.y0 && cy <= L.y1);
+}
+// Reads each text line that the full-photo OCR missed, as a single line.
+async function rescueLines(base, lines, s, langs, found) {
+  const out = [];
+  for (const L of lines) {
+    const boxInLine = found.some(w => inAnyLine(w.bbox, [L]));
+    if (boxInLine) continue;
+    const cw = Math.max(1, Math.round((L.x1 - L.x0) * s)), ch = Math.max(1, Math.round((L.y1 - L.y0) * s));
+    const crop = document.createElement("canvas"); crop.width = cw; crop.height = ch;
+    crop.getContext("2d").drawImage(base, L.x0 * s, L.y0 * s, cw, ch, 0, 0, cw, ch);
+    const mean = (() => { const d = crop.getContext("2d").getImageData(0, 0, cw, ch).data; let t = 0; for (let i = 0; i < d.length; i += 4) t += d[i]; return t / (d.length / 4); })();
+    const v = photoVariants(crop)[mean < 128 ? 1 : 0];
+    const r = await Tesseract.recognize(v.canvas, langs, { tessedit_pageseg_mode: "7" });
+    const text = (r.data.text || "").trim();
+    if (text) out.push({ text, confidence: Math.max(MIN_WORD_CONFIDENCE, r.data.confidence || 0), bbox: L });
+  }
+  return out;
+}
+
 async function scanPhoto() {
   $("scanBtn").disabled = true;
   $("scanOverlay").style.display = "block";
   $("scanBar").style.display = "block"; // sweeps left to right three times while reading
   const all = [];
   const failed = [];
+  const img = $("mainImage");
+  const s = photoScale(img);
+  let base = null, lines = [];
+  // Keep only words that sit inside a text line, unless the OCR was confident about them.
+  const keepWords = list => lines.length
+    ? list.filter(w => w.confidence >= 60 || inAnyLine(w.bbox, lines))
+    : list;
   // Keep whatever boxes the user already selected, matched by position.
   const showRegions = (first) => {
     const prev = state.regions.filter(r => state.selectedIds.has(r.id)).map(r => r.bbox);
-    state.regions = mergeReadings(all).map((w, i) => ({ id: "w" + i, text: w.text, confidence: w.confidence, bbox: w.bbox }));
+    state.regions = mergeReadings(keepWords(all)).map((w, i) => ({ id: "w" + i, text: w.text, confidence: w.confidence, bbox: w.bbox }));
     state.selectedIds = new Set(state.regions.filter(r => prev.some(b => boxIoU(b, r.bbox) > 0.5)).map(r => r.id));
     state.hoverId = null;
     renderBoxes(); renderSelectionText();
@@ -553,21 +662,28 @@ async function scanPhoto() {
   };
   const runPack = async (p, variants) => {
     try {
-      await readPack($("mainImage"), OCR_PACKS[p].langs, variants, pct => setStatus("Reading languages, group " + (p + 1) + " of " + OCR_PACKS.length + " · " + pct))
-        .then(got => all.push(...got));
+      const got = await readPack(img, OCR_PACKS[p].langs, variants, pct => setStatus("Reading languages, group " + (p + 1) + " of " + OCR_PACKS.length + " · " + pct));
+      all.push(...got);
     } catch (err) {
       failed.push(OCR_PACKS[p].langs); console.error("pack failed", OCR_PACKS[p].langs, err);
     }
   };
   try {
     await ensureTesseract();
-    // Fast first pass: the main languages, two image versions. Boxes show as soon as it is done.
+    base = photoCanvas(img, s);
+    try { lines = findTextLines(base).map(L => ({ x0: L.x0 / s, y0: L.y0 / s, x1: L.x1 / s, y1: L.y1 / s })); }
+    catch (err) { console.error("line finder failed", err); lines = []; }
+    // Fast first pass: the main languages, two image versions.
     await runPack(0, 2);
     if (failed.length === 1) throw new Error("main language pack failed to load");
+    if (lines.length) {
+      try { all.push(...await rescueLines(base, lines.map(L => ({ x0: L.x0, y0: L.y0, x1: L.x1, y1: L.y1 })), s, OCR_PACKS[0].langs, all)); }
+      catch (err) { console.error("line rescue failed", err); }
+    }
     showRegions(true);
     $("scanOverlay").style.display = "none";
     $("scanBar").style.display = "none";
-    setStatus("Found " + state.regions.length + " words. Reading more languages in the background…");
+    setStatus("Found " + state.regions.length + " text areas. Reading more languages in the background…");
     // The rest of the languages: their boxes are added as each group finishes.
     for (let p = 1; p < OCR_PACKS.length; p++) {
       await runPack(p, OCR_PACKS[p].variants);
