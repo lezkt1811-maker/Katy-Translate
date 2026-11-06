@@ -17,12 +17,14 @@
 
 <main class="wrap" id="top">
 
+  <!-- ===== Tabs: switch between the Text and Photo screens ===== -->
+  <nav class="card tabs" aria-label="Mode">
+    <a class="tab active" href="#top">Text</a>
+    <a class="tab" href="#photoSection">📷 Photo</a>
+  </nav>
+
   <!-- ===== Translator (the main screen, like the 2020 text view) ===== -->
-  <section class="card translator" aria-label="Translator">
-    <div class="tabs">
-      <a class="tab active" href="#top">Text</a>
-      <a class="tab" href="#photoSection">📷 Photo</a>
-    </div>
+  <section class="card translator" id="translator" aria-label="Translator">
 
     <div class="langbar">
       <select id="sourceLang" aria-label="Translate from"></select>

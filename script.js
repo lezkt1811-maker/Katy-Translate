@@ -366,14 +366,17 @@ async function renderImageOverlay() {
   }
   const tgt = $("targetLang").value;
   state.lineOverlays = [];
+  let failedLines = 0, quotaHit = false;
   for (let i = 0; i < lines.length; i++) {
     setStatus("Translating line " + (i + 1) + " of " + lines.length + " for the image overlay…");
     let translated = lines[i].text;
-    try { translated = await myMemoryTranslateChunk(lines[i].text, src, tgt); } catch {}
+    try { translated = await myMemoryTranslateChunk(lines[i].text, src, tgt); }
+    catch (err) { failedLines++; if (err && err.code === "QUOTA") { quotaHit = true; break; } }
     state.lineOverlays.push({ bbox: lines[i].bbox, text: translated, ...sampleBoxColors(lines[i].bbox) });
     await new Promise(r => setTimeout(r, 150));
   }
-  setStatus("");
+  setStatus(quotaHit ? "Today's free translation limit is used up, so some lines are shown in the original language."
+    : failedLines ? failedLines + " line(s) couldn't be translated and are shown in the original language." : "");
   drawImageOverlay();
 }
 
@@ -488,11 +491,18 @@ let tesseractReady = !!window.Tesseract;
 function ensureTesseract() {
   return new Promise((resolve, reject) => {
     if (window.Tesseract) { resolve(); return; }
-    let tries = 0;
+    let tries = 0, fallbackAdded = false;
     const check = setInterval(() => {
       tries++;
       if (window.Tesseract) { clearInterval(check); resolve(); }
-      else if (tries > 100) { clearInterval(check); reject(new Error("Tesseract failed to load")); }
+      else if (tries === 30 && !fallbackAdded) {
+        // The primary CDN didn't deliver Tesseract in ~3s; try a second CDN.
+        fallbackAdded = true;
+        const s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js";
+        document.head.appendChild(s);
+      }
+      else if (tries > 150) { clearInterval(check); reject(new Error("Tesseract failed to load")); }
     }, 100);
   });
 }
@@ -638,8 +648,16 @@ function chunkText(text, maxLen) {
 async function myMemoryTranslateChunk(text, src, tgt) {
   const url = "https://api.mymemory.translated.net/get?q=" + encodeURIComponent(text) + "&langpair=" + src + "|" + tgt;
   const res = await fetch(url);
+  if (!res.ok) throw Object.assign(new Error("HTTP " + res.status), { code: "NETWORK" });
   const data = await res.json();
-  return (data && data.responseData && data.responseData.translatedText) || "(no translation returned)";
+  const txt = (data && data.responseData && data.responseData.translatedText) || "";
+  // MyMemory reports quota and language errors inside a normal-looking reply.
+  // Treat those as failures instead of showing them as the translation.
+  if (!txt || /MYMEMORY WARNING|USED ALL AVAILABLE|QUOTA|INVALID LANGUAGE/i.test(txt) || (data.responseStatus && Number(data.responseStatus) !== 200)) {
+    const quota = /USED ALL AVAILABLE|QUOTA|MYMEMORY WARNING/i.test(txt);
+    throw Object.assign(new Error("MyMemory: " + (txt || "no translation")), { code: quota ? "QUOTA" : "API" });
+  }
+  return txt;
 }
 
 async function myMemoryTranslate(text, src, tgt, onProgress) {
@@ -893,7 +911,7 @@ function setOutput(html) {
 }
 function scheduleTranslate(delay) {
   clearTimeout(liveTimer);
-  liveTimer = setTimeout(runTranslate, delay == null ? 600 : delay);
+  liveTimer = setTimeout(runTranslate, delay == null ? 800 : delay);
 }
 
 async function runTranslate() {
@@ -925,8 +943,12 @@ async function runTranslate() {
         '<button class="iconbtn speak-btn" title="Listen" aria-label="Listen">🔊</button>' +
         '<button class="iconbtn copy-btn" title="Copy" aria-label="Copy translation">📋</button>' +
       '</div>');
-  } catch {
-    if (mySeq === runSeq) setOutput('<div class="result-text">Translation request failed. Check your connection and try again.</div>');
+  } catch (err) {
+    if (mySeq !== runSeq) return;
+    const msg = err && err.code === "QUOTA"
+      ? "Today's free translation limit is used up. Try again tomorrow, or choose Offline under Translation engine."
+      : "Translation failed. Check your connection and try again.";
+    setOutput('<div class="meta warn">' + escapeHtml(msg) + '</div>');
   }
 }
 
@@ -1169,3 +1191,19 @@ $("startOverBtn").addEventListener("click", () => {
   $("mainImage").src = ""; state.regions = []; state.selectedIds = new Set();
   document.querySelectorAll(".box").forEach(b => b.remove());
 });
+
+/* ============================================================
+   Views: like the 2020 app, the Text and Photo tabs show one
+   screen at a time instead of stacking everything on the page.
+   Driven by the URL hash, so the tabs, Back, and links all work.
+   ============================================================ */
+function showView() {
+  const photo = location.hash === "#photoSection" || location.hash === "#settingsPanel";
+  $("translator").style.display = photo ? "none" : "";
+  $("photoSection").style.display = photo ? "" : "none";
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", (t.getAttribute("href") === "#photoSection") === photo));
+  if (photo && location.hash === "#settingsPanel") $("settingsPanel").scrollIntoView();
+  else window.scrollTo(0, 0);
+}
+window.addEventListener("hashchange", showView);
+showView();

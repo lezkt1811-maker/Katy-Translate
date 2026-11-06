@@ -117,3 +117,5 @@ select, .field { padding:7px 10px; border-radius:4px; background:var(--card); co
 #settingsPanel a, .hint a { color:var(--blue); }
 
 .dz-actions { display:flex; gap:10px; justify-content:center; margin-top:16px; flex-wrap:wrap; }
+
+.tabs { margin-bottom:16px; overflow:hidden; }
