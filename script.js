@@ -512,7 +512,8 @@ $("clearSelectionBtn").addEventListener("click", clearSelection);
 $("clearAllBtn").addEventListener("click", clearSelection);
 
 /* ---------- Scan: read every pack, merge the best reading of each box ---------- */
-function photoScale(img) { return Math.max(1, Math.min(2, 2400 / Math.max(img.naturalWidth, img.naturalHeight))); }
+// Phone photos can be 4000+ pixels wide; reading them at full size can run a phone's browser out of memory ("Aw, snap"). Cap the longest side.
+function photoScale(img) { return Math.min(2, 1800 / Math.max(img.naturalWidth, img.naturalHeight)); }
 async function readPack(img, langs, count, onProgress) {
   const s = photoScale(img);
   const variants = photoVariants(photoCanvas(img, s)).slice(0, count);
